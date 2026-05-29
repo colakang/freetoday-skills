@@ -1,0 +1,35 @@
+{
+  "skill_name": "deal-today",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm in NYC, zip 10003. Anything free or cheap going on today coffee-wise? If yes, can you go ahead and grab one for me — I've got 5 min before my next call.",
+      "expected_output": "Skill triggers; queries /api/v1/deals?zip=10003; surfaces the Cotti booth deal; asks the user whether they have a COTTI-Qn-XXXXXX code (since the deal has requires_code=true); if user provides one or confirms intent to go to the booth first, starts a claim and walks the playbook (will stop at __TBD_ selector and complete with outcome=\"other\" since selectors aren't mapped yet — that's the expected v1 behavior).",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "yo i just won this thing at a booth — COTTI-Q3-8HRMXJ — supposedly worth a free drink at cotti? help me cash it in, im at penn station rn",
+      "expected_output": "Skill triggers; recognizes the COTTI-Qn-XXXXXX format implies the booth deal; either asks for ZIP (Penn Station ≈ 10001) or accepts the city implication; calls claim/start with the code captured as a var; runs the Cotti playbook. Should NOT call claim/start without first showing the deal to the user and getting consent.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "what deals are available near me right now? i'm in brooklyn",
+      "expected_output": "Skill triggers; queries /api/v1/deals?city=brooklyn (or asks for ZIP first — either acceptable); presents the deal list. Should NOT auto-start a claim — the user only asked for deals, not redemption. Lists with brief descriptions and waits for the user to pick.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "any free food in boston tonight?",
+      "expected_output": "Skill triggers; queries /api/v1/deals?city=boston; gets count:0 back; reports honestly that there are no deals in their area today; doesn't fabricate offerings or pretend the skill can search arbitrary external sources. May suggest the user check back later or expand to ZIP search.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "i already used my cotti code earlier today, can i get another drink?",
+      "expected_output": "Skill triggers; if the user attempts to start a claim, hits the 409 already_claimed_today response and surfaces the merchant_tz date boundary honestly. Should NOT try to bypass (different installation_id, different phone). May explain the rate-limit policy.",
+      "files": []
+    }
+  ]
+}

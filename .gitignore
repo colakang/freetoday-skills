@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+# don't commit eval workspace outputs / per-iteration artifacts
+deal-today-workspace/
+iteration-*/
+
+# user-local install state — never accidentally vendored from a clone
+installation_id
