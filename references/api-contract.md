@@ -50,7 +50,7 @@ Reserves a same-day claim slot for this `(installation_id, merchant)` pair (and 
 }
 ```
 
-- `installation_id`: 8-64 chars. The UUID written under `~/.config/deal-today/installation_id` on first run.
+- `installation_id`: 8-64 chars. The UUID written under `~/.config/freetoday/installation_id` on first run.
 - `phone`: optional. If present, server normalizes (digits only) and hashes with a server-only pepper before storage. Required to enforce the phone-based rate-limit; effectively required for any merchant whose playbook will log in by phone (i.e. all current merchants).
 
 **200**
@@ -62,7 +62,7 @@ Reserves a same-day claim slot for this `(installation_id, merchant)` pair (and 
   "playbook": {
     "playbook_id": "cotti-pickup-v1",
     "merchant_id": "cotti",
-    "version": 1,
+    "version": 2,
     "steps": [ /* see playbook-schema.md */ ],
     "notes": "..."
   },
@@ -70,11 +70,26 @@ Reserves a same-day claim slot for this `(installation_id, merchant)` pair (and 
     "deal_id": "cotti-nyc-free-drink-booth-2026",
     "title": "Free drink at Cotti Coffee NYC (booth winners)",
     "requires_code": true
+  },
+  "voucher": {                    // only present when the deal requires one
+    "code": "aBcDeF1234",         // the merchant's real voucher code, allocated from the pool
+    "kind": "代金券",              // free-text label from the merchant (e.g. 代金券, discount, free_item)
+    "description": "$0 For Drinks"
   }
 }
 ```
 
 Hold `claim_id` — `claim/complete` needs it.
+
+When `voucher` is present, **seed it into your playbook vars before stepping**:
+
+```
+vars["voucher_code"]        = response.voucher.code
+vars["voucher_description"] = response.voucher.description
+vars["voucher_kind"]        = response.voucher.kind
+```
+
+Playbook steps reference these via `{{voucher_code}}` etc. The skill does NOT ask the user for a voucher code — the server allocated it. The voucher is reserved server-side; either the success completion marks it `used`, or a failed completion keeps it `reserved` for operator review.
 
 **409 — already claimed today**
 ```json
@@ -94,6 +109,19 @@ Hold `claim_id` — `claim/complete` needs it.
 When the user sees this, tell them the merchant's local date that already counts against them and roughly when midnight in that timezone is. Don't retry; the answer won't change until the merchant's clock rolls over.
 
 **404** — unknown `deal_id` or the deal references a missing playbook.
+
+**503 — voucher pool empty**
+```json
+{
+  "detail": {
+    "error": "voucher_pool_empty",
+    "merchant_id": "cotti",
+    "message": "Sorry — cotti vouchers are sold out for now. The operator needs to load a fresh batch. Try again later."
+  }
+}
+```
+
+Only happens for deals that require a voucher when the merchant's pool is empty. Tell the user honestly; suggest they retry later.
 
 ## `POST /api/v1/claim/complete`
 

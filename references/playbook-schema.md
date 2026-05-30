@@ -10,6 +10,26 @@ Any string field whose value contains `{{name}}` has those tokens replaced from 
 
 Substitution happens on `fill.value`, `confirm_with_user.message`, and (defensively) on `navigate.url`. It does NOT happen on selectors — those are taken literally.
 
+## Pre-populated vars from the claim response
+
+Some deals come with a merchant voucher allocated by the server. When `claim/start` returns a `voucher` object, **seed these into `vars` before stepping**:
+
+| `vars` key | Source |
+|---|---|
+| `voucher_code` | `response.voucher.code` |
+| `voucher_description` | `response.voucher.description` |
+| `voucher_kind` | `response.voucher.kind` |
+
+Playbook authors can then write `{{voucher_code}}` in a `fill` step without needing an `ask_user` first. Don't surface the raw `voucher_code` to the user mid-playbook unless you have to (the merchant's confirmation modal will show it).
+
+## Selectors
+
+By default, selectors are CSS. The skill also passes Playwright-style accessibility selectors verbatim — `role=button[name="…"]`, `role=textbox[name="…"]`, `text="…"` — because they're the most portable cross-tool way to point at modern apps' a11y trees (Flutter Web, React with Material, etc.).
+
+Picking which to use is up to the playbook author; the executor is expected to pass whatever it gets to its underlying tool. Chrome MCP, camoufox-cli, and playwright-cli all accept this syntax. For unsupported syntaxes, the tool falls back to its own a11y APIs.
+
+For Flutter Web apps specifically (Cotti, see `merchants/cotti.md`), CSS will not work — the page renders to a canvas, and `role=…` is the only viable form. The browser tool may need to click the `<flt-semantics-placeholder>` element to populate the a11y tree first; most tools do this implicitly when they request an accessibility snapshot.
+
 ## Actions
 
 ### `navigate`

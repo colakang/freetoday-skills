@@ -50,7 +50,7 @@ Same shape, anti-fingerprint Firefox. Used by sibling skills like `quest-appoint
 
 ```bash
 # Session bootstrap (headed + persistent — both required, or state vanishes)
-camoufox-cli --session deal-today --headed --persistent --timeout 3600 open "<url>"
+camoufox-cli --session freetoday --headed --persistent --timeout 3600 open "<url>"
 ```
 
 Action mapping mostly mirrors playwright-cli; check `camoufox-cli --help` for the exact subcommand spellings. Notable difference: camoufox's `fill` does a strict visibility check that fails on hidden inputs (common in Material/Vuetify). For those, fall back to evaluating a JS snippet that sets value + dispatches `input` + `change`. quest-appointment has examples.
@@ -90,7 +90,7 @@ This degrades gracefully — better than silently failing or hallucinating selec
 Across all of these:
 
 - Browser tools that write profile/state to `~/.config/...`, `~/.cache/...`, or `~/.claude/...` may need explicit permission grants on Claude Code. Check the host's setting documentation if first invocation fails.
-- The skill's own writes are limited to one file: `~/.config/deal-today/installation_id`. That's it.
+- The skill's own writes are limited to one file: `~/.config/freetoday/installation_id`. That's it.
 
 ## A note on rate-limit and tool choice
 

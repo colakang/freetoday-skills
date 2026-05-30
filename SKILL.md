@@ -1,15 +1,14 @@
 ---
-name: deal-today
+name: freetoday
 description: Find today's free or deeply discounted food & drink deals near the user
   and auto-redeem them by driving the merchant's website to place a pickup order.
   Use this whenever the user mentions deal hunting, free coffee, free food, today's
-  promos, "what's free near me", "any deals nearby", redeeming a coupon code (e.g. a
-  COTTI-Qn-XXXXXX code from a partner booth), or asks to auto-order with a discount —
-  even if they don't explicitly say "Deal today". One redemption per merchant per day,
-  enforced server-side.
+  promos, "what's free near me", "any deals nearby", "anything free today", or asks
+  to auto-order with a discount — even if they don't explicitly say "FreeToday".
+  One redemption per merchant per day, enforced server-side.
 ---
 
-# Deal Today
+# FreeToday
 
 Discovers daily food & drink deals near the user (by ZIP or city) and, on confirmation, drives the merchant's website to place a pickup order on the user's behalf.
 
@@ -26,10 +25,16 @@ Follow these steps in order. Don't skip the confirmation steps — placing an or
 1. **Make sure the installation_id exists** (one-time per machine, see [installation identity](#installation-identity)).
 2. **Ask the user for their location** — ZIP code preferred, city name acceptable. Don't guess; ask.
 3. **Fetch deals** — `GET https://deal.echo365.ai/api/v1/deals?zip={zip}` or `?city={city}`. Show the user the list with deal IDs and titles, and let them pick.
-4. **Reserve a claim + fetch the playbook** in one call — `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?}`. If the deal `requires_code: true` AND the user already has a code (e.g. `COTTI-Q3-8HRMXJ` from the booth), capture it now so you can fill the `code` variable when the playbook asks.
-   - If the server returns **409 already_claimed_today**, tell the user when their next attempt is allowed (the response includes `claimed_date` and `merchant_tz`) and stop. Don't argue with the server.
-5. **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into a local dict; `{{var}}` substitutions in subsequent steps draw from it.
-6. **Report the outcome** — when the playbook ends (success OR failure), `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`. `outcome="ok"` only when an order confirmation was actually extracted; on any failure use `selector_miss`, `captcha`, `login_fail`, `user_aborted`, or `other`.
+4. **Reserve a claim + fetch the playbook** in one call — `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?}`. The server-side handles voucher allocation: if the deal needs a merchant-issued voucher code, the response includes a `voucher` object — the server reserved one from the pool for this claim.
+   - **409 already_claimed_today** → tell the user when their next attempt is allowed (`claimed_date` + `merchant_tz` are in the response) and stop. Don't argue with the server.
+   - **503 voucher_pool_empty** → the merchant's voucher batch is exhausted. Tell the user, suggest they try again later, and stop.
+5. **Seed playbook vars from the response** — before the first step, populate your local `vars` dict with:
+   - `vars["voucher_code"]        = response.voucher.code`           (if present)
+   - `vars["voucher_description"] = response.voucher.description`     (if present)
+   - `vars["voucher_kind"]        = response.voucher.kind`            (if present)
+   These are referenced by `{{voucher_code}}` etc. in playbook steps.
+6. **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into the same `vars` dict; `{{var}}` substitutions in subsequent steps draw from it.
+7. **Report the outcome** — when the playbook ends (success OR failure), `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`. `outcome="ok"` only when an order confirmation was actually extracted; on any failure use `selector_miss`, `captcha`, `login_fail`, `user_aborted`, or `other`. The server uses this to release-or-burn the reserved voucher.
 
 ## Calling the backend
 
@@ -58,7 +63,7 @@ If `curl` isn't in the host's tool palette, use whatever HTTP capability is: nat
 
 The server needs a stable per-installation key so it can enforce "one redemption per day per machine." On first run:
 
-1. Check whether the file `~/.config/deal-today/installation_id` exists (`$XDG_CONFIG_HOME/deal-today/installation_id` if `XDG_CONFIG_HOME` is set).
+1. Check whether the file `~/.config/freetoday/installation_id` exists (`$XDG_CONFIG_HOME/freetoday/installation_id` if `XDG_CONFIG_HOME` is set).
 2. If yes, read its 32-char UUID and use it for every API call as the `installation_id` field.
 3. If no, generate a UUIDv4 (`uuidgen` / `python3 -c 'import uuid; print(uuid.uuid4())'` / language-equivalent), `mkdir -p` the parent, write it `chmod 600`.
 
