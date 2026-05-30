@@ -25,16 +25,16 @@ Follow these steps in order. Don't skip the confirmation steps — placing an or
 1. **Make sure the installation_id exists** (one-time per machine, see [installation identity](#installation-identity)).
 2. **Ask the user for their location** — ZIP code preferred, city name acceptable. Don't guess; ask.
 3. **Fetch deals** — `GET https://deal.echo365.ai/api/v1/deals?zip={zip}` or `?city={city}`. Show the user the list with deal IDs and titles, and let them pick.
-4. **Reserve a claim + fetch the playbook** in one call — `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?}`. The server-side handles voucher allocation: if the deal needs a merchant-issued voucher code, the response includes a `voucher` object — the server reserved one from the pool for this claim.
-   - **409 already_claimed_today** → tell the user when their next attempt is allowed (`claimed_date` + `merchant_tz` are in the response) and stop. Don't argue with the server.
-   - **503 voucher_pool_empty** → the merchant's voucher batch is exhausted. Tell the user, suggest they try again later, and stop.
-5. **Seed playbook vars from the response** — before the first step, populate your local `vars` dict with:
-   - `vars["voucher_code"]        = response.voucher.code`           (if present)
-   - `vars["voucher_description"] = response.voucher.description`     (if present)
-   - `vars["voucher_kind"]        = response.voucher.kind`            (if present)
-   These are referenced by `{{voucher_code}}` etc. in playbook steps.
-6. **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into the same `vars` dict; `{{var}}` substitutions in subsequent steps draw from it.
-7. **Report the outcome** — when the playbook ends (success OR failure), `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`. `outcome="ok"` only when an order confirmation was actually extracted; on any failure use `selector_miss`, `captcha`, `login_fail`, `user_aborted`, or `other`. The server uses this to release-or-burn the reserved voucher.
+4. **Reserve a same-day claim + fetch the playbook** — `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?, mac?}`. The server uses these to compute three rate-limit keys: `installation_id`, `phone_hash`, and `agent_uid_hash` = sha256(mac + phone + server_pepper). Same-merchant-same-day claims that match ANY of those are rejected.
+   - **409 already_claimed_today** → tell the user when their next attempt is allowed (`claimed_date` + `merchant_tz` are in the response) and stop.
+   - The response does NOT include a voucher — voucher allocation is lazy, see step 6.
+5. **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into a local `vars` dict; `{{var}}` substitutions in subsequent steps draw from it.
+6. **At the `acquire_voucher` step**, call `POST /api/v1/voucher/lock` with `{claim_id}`. The server allocates a real merchant voucher from the pool (lazily — only when the playbook actually reaches the redemption step). Populate:
+   - `vars["voucher_code"]        = response.code`
+   - `vars["voucher_description"] = response.description`
+   - `vars["voucher_kind"]        = response.kind`
+   - **503 voucher_pool_empty** → abort. Call `claim/complete` with `outcome="voucher_pool_empty"` and tell the user honestly.
+7. **Report the outcome** — when the playbook ends (success OR failure), `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`. `outcome="ok"` is the only path that counts as success and burns the voucher. Aborting before `acquire_voucher` is free of voucher-pool impact (the daily slot for that user IS consumed by the started claim). Aborting AT or AFTER `acquire_voucher` releases the voucher back to the pool for outcomes the server can confidently call "not consumed merchant-side" (`user_aborted`, `captcha`, `voucher_pool_empty`); ambiguous outcomes leave it `locked` until the 30-minute stale-lock sweep recycles it.
 
 ## Calling the backend
 
@@ -67,7 +67,22 @@ The server needs a stable per-installation key so it can enforce "one redemption
 2. If yes, read its 32-char UUID and use it for every API call as the `installation_id` field.
 3. If no, generate a UUIDv4 (`uuidgen` / `python3 -c 'import uuid; print(uuid.uuid4())'` / language-equivalent), `mkdir -p` the parent, write it `chmod 600`.
 
-The file is the only persistent state the skill writes. Never overwrite an existing one — that's the user trying to reset, and it's their right, but the server will catch the second redemption today via the phone hash.
+The file is the only persistent state the skill writes. Never overwrite an existing one — that's the user trying to reset, and it's their right, but the server will catch the second redemption today via the phone hash + agent_uid_hash combo.
+
+## MAC detection (for agent_uid_hash)
+
+Along with phone, the server uses MAC to compute a stronger per-user fingerprint than installation_id alone. Detect the first non-loopback interface MAC on the host:
+
+| OS | Command |
+|---|---|
+| macOS | `ifconfig en0 \| awk '/ether/{print $2}'` |
+| Linux | `cat /sys/class/net/$(ls /sys/class/net \| grep -E '^(en\|eth)' \| head -1)/address` |
+| Linux/macOS fallback | `ip link show 2>/dev/null \| awk '/link\/ether/{print $2; exit}'` |
+| Windows | `getmac /v /fo csv \| findstr -v 'Disconnected' \| head -1` |
+
+If you can't detect a MAC (running in docker without `--network=host`, a hardened sandbox, WSL with virtualized networking, or anywhere `ifconfig`/`ip` aren't installed), pass `mac: null` (or omit) in the `claim/start` request. The server gracefully degrades to phone-only fingerprinting — same level of protection as the v1 phone-hash rate-limit.
+
+Don't fabricate or hash a MAC client-side. Just send what you have (raw) and let the server's pepper handle the hashing.
 
 ## Executing a playbook
 
@@ -97,6 +112,7 @@ Loop over `steps` in order. Maintain a local `vars` dict (string→string). For 
 - **`extract`** — read the text content of `step.selector` and store it under `vars[step.var]`.
 - **`ask_user`** — pause execution. Ask the user IN THE CHAT, verbatim, the contents of `step.prompt`. When they reply, store it under `vars[step.var]`. If `step.mask` is true, tell the user that what they type won't be shown back to them — but you cannot actually hide chat history; do not lie about masking.
 - **`confirm_with_user`** — render `step.message` with `{{var}}` substitution and wait for an explicit yes/no. On no, abort the playbook and call `/claim/complete` with `outcome="user_aborted"`.
+- **`acquire_voucher`** — call `POST /api/v1/voucher/lock` with `{claim_id: <current>}`. On 200, populate `vars["voucher_code"]`, `vars["voucher_description"]`, `vars["voucher_kind"]` from the response. On 503 voucher_pool_empty, abort with `claim/complete outcome="voucher_pool_empty"`.
 
 If `step.selector` starts with `__TBD_` it's a placeholder for an un-mapped flow — stop, tell the user "this playbook is still being mapped; here's what I'd do next: ..." and call `/claim/complete` with `outcome="other"`, notes describing where you stopped.
 

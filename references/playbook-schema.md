@@ -2,7 +2,7 @@
 
 A playbook is an ordered list of `steps` returned by `POST /api/v1/claim/start`. Each step is a JSON object with an `action` string and action-specific fields. The skill executes them in order, maintaining a local `vars: dict[str, str]` for state passed between steps.
 
-There are exactly **7 action types**. The set is intentionally small so any browser tool can implement it.
+There are exactly **8 action types**. The set is intentionally small so any browser tool can implement it (7 of them are browser actions; the 8th, `acquire_voucher`, is an API call the skill makes mid-flow).
 
 ## Variable substitution
 
@@ -10,17 +10,17 @@ Any string field whose value contains `{{name}}` has those tokens replaced from 
 
 Substitution happens on `fill.value`, `confirm_with_user.message`, and (defensively) on `navigate.url`. It does NOT happen on selectors — those are taken literally.
 
-## Pre-populated vars from the claim response
+## Voucher vars (populated by `acquire_voucher`)
 
-Some deals come with a merchant voucher allocated by the server. When `claim/start` returns a `voucher` object, **seed these into `vars` before stepping**:
+When the playbook reaches an `acquire_voucher` step, the skill calls `POST /api/v1/voucher/lock` and seeds these into `vars`:
 
 | `vars` key | Source |
 |---|---|
-| `voucher_code` | `response.voucher.code` |
-| `voucher_description` | `response.voucher.description` |
-| `voucher_kind` | `response.voucher.kind` |
+| `voucher_code` | `response.code` |
+| `voucher_description` | `response.description` |
+| `voucher_kind` | `response.kind` |
 
-Playbook authors can then write `{{voucher_code}}` in a `fill` step without needing an `ask_user` first. Don't surface the raw `voucher_code` to the user mid-playbook unless you have to (the merchant's confirmation modal will show it).
+Playbook authors use `{{voucher_code}}` etc. in subsequent `fill` / `confirm_with_user` steps. The skill does NOT ask the user for a voucher code — the server pool allocates it lazily, only when the playbook actually reaches the redemption step.
 
 ## Selectors
 
@@ -82,6 +82,22 @@ Render `message` (with substitution) to the user and wait for explicit yes/no. Y
 
 This action MUST appear at least once before the final order-placing click; merchant playbooks are authored with that in mind. Don't skip it even if it feels redundant.
 
+### `acquire_voucher`
+```json
+{"action": "acquire_voucher"}
+```
+The only non-browser action. The skill calls `POST /api/v1/voucher/lock` with the current `claim_id`. The server allocates a merchant voucher from the pool, locks it, and returns `{code, kind, description, voucher_id}`. The skill populates `vars["voucher_code"]`, `vars["voucher_description"]`, `vars["voucher_kind"]`.
+
+The action takes no parameters — server uses the claim's stored merchant_id to pick from the right pool.
+
+On error:
+- **503 voucher_pool_empty** → abort with `claim/complete outcome="voucher_pool_empty"`.
+- **409 wrong_state** → claim is already completed; abort with `outcome="other", notes="lock-after-complete bug"`.
+
+Idempotent: calling twice on the same `claim_id` returns the same voucher (response includes `noop: true`). Useful if the skill retries the step after a transient network hiccup.
+
+Place this step in the playbook RIGHT BEFORE the first `fill` that uses `{{voucher_code}}`. Don't put it at the start of the playbook — that would allocate vouchers for users who abort before the redemption screen.
+
 ## Placeholder selectors (`__TBD_*__`)
 
 If the playbook contains selectors starting with `__TBD_` (literal placeholder, e.g. `"__TBD_login_button__"`), it means the merchant flow isn't fully mapped yet. Don't try to guess what they refer to. Stop at the first `__TBD_` selector, complete the claim with `outcome="other"` and notes describing the user-visible step you stopped at, and tell the user the playbook is still in progress.
@@ -107,6 +123,14 @@ for i, step in enumerate(playbook.steps):
     elif a == "confirm_with_user":
         if not yes_no(sub(step["message"])):
             return complete(claim_id, "user_aborted", step_index=i)
+    elif a == "acquire_voucher":
+        r = api_post(f"/api/v1/voucher/lock", {"claim_id": claim_id})
+        if r.status == 503:
+            return complete(claim_id, "voucher_pool_empty", step_index=i, notes=r.json()["detail"]["message"])
+        v = r.json()
+        vars["voucher_code"]        = v["code"]
+        vars["voucher_description"] = v["description"]
+        vars["voucher_kind"]        = v["kind"]
     else:
         return complete(claim_id, "other", step_index=i, notes=f"unknown action {a}")
 return complete(claim_id, "ok")

@@ -82,7 +82,8 @@ There is no delivery option in the US Cotti app. Voucher redemption credits the 
 | Version | Notes |
 |---|---|
 | v1 | Placeholder skeleton with `__TBD_*__` selectors (never lived in production). |
-| v2 | First real selectors mapped from a manual flow on 2026-05-29. Uses Playwright-style role+name selectors, hybrid auto+manual (skill drives what it can, hands off to user at CAPTCHA). Stops at "voucher credited" — no auto-order. |
+| v2 | First real selectors mapped from a manual flow on 2026-05-29. Uses Playwright-style role+name selectors, hybrid auto+manual (skill drives what it can, hands off to user at CAPTCHA). Voucher pre-allocated at claim/start. |
+| v3 | Adds the `acquire_voucher` step (lazy allocation via `POST /api/v1/voucher/lock`). Voucher is locked only when the playbook actually reaches the Cotti 券码兑换 screen — users who abort during login don't burn vouchers. Stops at "voucher credited" — no auto-order. |
 
 ## Cross-references
 

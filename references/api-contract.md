@@ -17,9 +17,9 @@ Lists active deals matching the user's location.
     {
       "deal_id": "cotti-nyc-free-drink-booth-2026",
       "merchant_id": "cotti",
-      "title": "Free drink at Cotti Coffee NYC (booth winners)",
-      "description": "Won a COTTI-Qn-XXXXXX code at the OpenClaw × Cotti NYC booth? ...",
-      "zip_prefixes": ["100", "101", "102", "103", "104", "110", "111", "112", "113", "114", "115", "116"],
+      "title": "Free drink at Cotti Coffee NYC",
+      "description": "...",
+      "zip_prefixes": ["100", "101", "102", "..."],
       "city_keywords": ["new york", "nyc", "manhattan", "brooklyn", "queens"],
       "expires_at": null,
       "playbook_id": "cotti-pickup-v1",
@@ -39,24 +39,26 @@ Single-deal lookup, same shape as one element of the list above. **404** if unkn
 
 ## `POST /api/v1/claim/start`
 
-Reserves a same-day claim slot for this `(installation_id, merchant)` pair (and `(phone_hash, merchant)` if phone supplied) and returns the playbook to execute.
+Reserves a same-day claim slot. Computes three rate-limit keys server-side: `installation_id`, `phone_hash`, and `agent_uid_hash` = sha256(server_pepper, mac, phone). Any same-merchant-same-day match in `('started','succeeded')` blocks.
 
 **Request body**
 ```json
 {
   "deal_id": "cotti-nyc-free-drink-booth-2026",
   "installation_id": "ea45a889-0edd-46e9-92c1-375663dfd04c",
-  "phone": "+15551234567"
+  "phone": "+15551234567",
+  "mac":   "aa:bb:cc:11:22:33"
 }
 ```
 
 - `installation_id`: 8-64 chars. The UUID written under `~/.config/freetoday/installation_id` on first run.
-- `phone`: optional. If present, server normalizes (digits only) and hashes with a server-only pepper before storage. Required to enforce the phone-based rate-limit; effectively required for any merchant whose playbook will log in by phone (i.e. all current merchants).
+- `phone`: optional but strongly recommended — feeds both `phone_hash` and `agent_uid_hash`. Effectively required for any merchant whose playbook logs in by phone (all current merchants).
+- `mac`: optional. Host's first non-loopback interface MAC. Combined with `phone` + server pepper into `agent_uid_hash`. If the skill can't detect a MAC (docker, sandbox, hardened OS), pass `null` or omit — server falls back to phone-only, defense degrades gracefully.
 
 **200**
 ```json
 {
-  "claim_id": "GStUSGVajrycflbCww3svA",
+  "claim_id": "Q1b2FQP9MwGz2xgKIfCHAg",
   "claimed_date": "2026-05-29",
   "merchant_tz": "America/New_York",
   "playbook": {
@@ -68,28 +70,15 @@ Reserves a same-day claim slot for this `(installation_id, merchant)` pair (and 
   },
   "deal_meta": {
     "deal_id": "cotti-nyc-free-drink-booth-2026",
-    "title": "Free drink at Cotti Coffee NYC (booth winners)",
-    "requires_code": true
-  },
-  "voucher": {                    // only present when the deal requires one
-    "code": "aBcDeF1234",         // the merchant's real voucher code, allocated from the pool
-    "kind": "代金券",              // free-text label from the merchant (e.g. 代金券, discount, free_item)
-    "description": "$0 For Drinks"
+    "title": "Free drink at Cotti Coffee NYC",
+    "requires_voucher": true
   }
 }
 ```
 
-Hold `claim_id` — `claim/complete` needs it.
+**The response does NOT include a voucher.** Voucher allocation is lazy: call `POST /api/v1/voucher/lock` only when the playbook reaches the `acquire_voucher` step. This keeps the merchant pool intact for users who abort before the redemption screen.
 
-When `voucher` is present, **seed it into your playbook vars before stepping**:
-
-```
-vars["voucher_code"]        = response.voucher.code
-vars["voucher_description"] = response.voucher.description
-vars["voucher_kind"]        = response.voucher.kind
-```
-
-Playbook steps reference these via `{{voucher_code}}` etc. The skill does NOT ask the user for a voucher code — the server allocated it. The voucher is reserved server-side; either the success completion marks it `used`, or a failed completion keeps it `reserved` for operator review.
+Hold `claim_id` — every subsequent endpoint needs it.
 
 **409 — already claimed today**
 ```json
@@ -99,16 +88,52 @@ Playbook steps reference these via `{{voucher_code}}` etc. The skill does NOT as
     "merchant_id": "cotti",
     "claimed_date": "2026-05-29",
     "merchant_tz": "America/New_York",
-    "existing_claim_id": "LHVdSdNFv2w-...",
+    "existing_claim_id": "...",
     "existing_status": "succeeded",
     "message": "You already claimed a deal from cotti today (2026-05-29, America/New_York). One claim per merchant per day."
   }
 }
 ```
 
-When the user sees this, tell them the merchant's local date that already counts against them and roughly when midnight in that timezone is. Don't retry; the answer won't change until the merchant's clock rolls over.
+Tell the user when the merchant clock rolls over; don't retry.
 
-**404** — unknown `deal_id` or the deal references a missing playbook.
+**404** — unknown `deal_id` or its playbook is missing.
+
+## `POST /api/v1/voucher/lock`
+
+Lazy voucher allocation. Call this AT the `acquire_voucher` step in the playbook — not before.
+
+**Request body**
+```json
+{"claim_id": "Q1b2FQP9MwGz2xgKIfCHAg"}
+```
+
+Server flow:
+1. Looks up the claim (404 if missing, 409 if not in `started` state).
+2. Sweeps stale `locked` vouchers (>30 min old) for this merchant back to `created`.
+3. Allocates the lowest-id `created` voucher for the merchant.
+4. Marks it `locked`, links to this `claim_id`.
+5. Returns the voucher details.
+
+**200**
+```json
+{
+  "voucher_id": 1,
+  "code": "aBcDeF1234",
+  "kind": "代金券",
+  "description": "$0 For Drinks",
+  "swept_stale_locks": 0
+}
+```
+
+Idempotent: calling again with the same `claim_id` returns the same voucher with `noop: true, prior: true`.
+
+After getting the response, the skill seeds:
+```
+vars["voucher_code"]        = response.code
+vars["voucher_description"] = response.description
+vars["voucher_kind"]        = response.kind
+```
 
 **503 — voucher pool empty**
 ```json
@@ -121,16 +146,25 @@ When the user sees this, tell them the merchant's local date that already counts
 }
 ```
 
-Only happens for deals that require a voucher when the merchant's pool is empty. Tell the user honestly; suggest they retry later.
+Abort the playbook. Call `claim/complete` with `outcome="voucher_pool_empty"` so the server can keep a clean audit trail. Tell the user honestly that the pool is empty.
+
+**404** — claim not found. The skill messed up (lost claim_id) or sent a wrong one.
+
+**409 — wrong state**
+```json
+{"detail": {"error": "wrong_state", "claim_status": "succeeded", "message": "claim is not in 'started' state"}}
+```
+
+The claim is already completed — too late to lock a voucher for it.
 
 ## `POST /api/v1/claim/complete`
 
-Finalizes the claim with the outcome.
+Finalizes the claim with the outcome. Drives voucher state-machine transitions.
 
 **Request body**
 ```json
 {
-  "claim_id": "GStUSGVajrycflbCww3svA",
+  "claim_id": "Q1b2FQP9MwGz2xgKIfCHAg",
   "outcome": "ok",
   "step_index": null,
   "notes": null
@@ -138,21 +172,28 @@ Finalizes the claim with the outcome.
 ```
 
 `outcome` values:
-- `ok` — order confirmation extracted and shown to user. Maps to `status="succeeded"` server-side. This is the ONLY outcome that counts as a successful redemption.
-- `selector_miss` — `wait_for` or click hit an element that wasn't there. Include `step_index`.
-- `captcha` — site presented a CAPTCHA.
-- `login_fail` — couldn't authenticate the user (e.g. wrong OTP twice).
-- `user_aborted` — user said no at a `confirm_with_user` step or otherwise asked to stop.
-- `other` — anything else; explain in `notes`.
+- `ok` — order/voucher confirmation extracted and shown to user. Maps to `status="succeeded"`. The voucher (if locked) is marked `used`.
+- `selector_miss` — `wait_for`/`click` element wasn't there. Include `step_index`. Voucher (if locked) stays `locked` — operator reviews via `/admin/vouchers/{id}/release`.
+- `captcha` — site presented a CAPTCHA the skill can't solve. Voucher releases back to `created` (we know nothing was redeemed merchant-side).
+- `login_fail` — couldn't authenticate (e.g. OTP failed twice). Voucher stays `locked` (ambiguous: maybe Cotti partially recorded the attempt).
+- `user_aborted` — user said no at a `confirm_with_user` step. Voucher releases back to `created`.
+- `voucher_pool_empty` — server told us no voucher available. Voucher state unchanged (none was locked).
+- `other` — anything else; explain in `notes`. Voucher stays `locked` for operator review.
 
-Anything other than `ok` maps to `status="failed"` server-side, releases the rate-limit slot for a retry **only if the failure was server-side** (this nuance is enforced by the unique index — failed `started` claims don't block, succeeded ones do).
+Voucher state outcomes (assuming a voucher was locked):
+
+| outcome | voucher status after |
+|---|---|
+| `ok` | `used` |
+| `user_aborted`, `captcha`, `voucher_pool_empty` | `created` (released) |
+| `selector_miss`, `login_fail`, `other` | `locked` (sweep recycles after 30 min, or operator manual release) |
 
 **200**
 ```json
 {"ok": true, "claim_id": "...", "status": "succeeded"}  // or "failed"
 ```
 
-If the claim was already completed (idempotent retry):
+Idempotent retry:
 ```json
 {"ok": true, "noop": true, "prior_status": "succeeded"}
 ```
@@ -165,4 +206,4 @@ FastAPI default: errors come back as `{"detail": <message or object>}` with the 
 
 ## Why no Bearer / API key on the public endpoints?
 
-Read-only access (the catalog) is genuinely public — it's just a list of deals. Claim creation requires an installation_id which is per-machine and locally generated; we don't pretend that's an authentication system. The rate-limit is the only meaningful gatekeeper, and it's defense-in-depth (install_id + phone_hash), not user authentication. This keeps the skill simple to ship to customers who shouldn't have to provision credentials before they can do anything.
+Read-only access (the catalog) is genuinely public — just a list of deals. Claim creation requires `installation_id` which is per-machine and locally generated; we don't pretend that's an authentication system. The rate-limit is the only meaningful gatekeeper — three keys (installation_id, phone_hash, agent_uid_hash). This keeps the skill simple to ship to customers who shouldn't have to provision credentials before they can do anything.
