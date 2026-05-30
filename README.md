@@ -64,4 +64,7 @@ references/
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 freetoday.ai.
+AGPL-3.0 — see [LICENSE](LICENSE). Copyright (c) 2026 freetoday.ai.
+
+If you fork or use this in a network-accessible service, AGPL requires you to
+make the corresponding source code available to your users.
