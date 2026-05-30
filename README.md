@@ -64,4 +64,4 @@ references/
 
 ## License
 
-Private — not yet open-sourced.
+MIT — see [LICENSE](LICENSE). Copyright (c) 2026 freetoday.ai.
