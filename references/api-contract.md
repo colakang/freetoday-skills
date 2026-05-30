@@ -122,9 +122,15 @@ Server flow:
   "code": "aBcDeF1234",
   "kind": "代金券",
   "description": "$0 For Drinks",
+  "usage_limit": 1,
+  "usage_count": 0,
+  "discount_type": "full",
+  "discount_value": null,
   "swept_stale_locks": 0
 }
 ```
+
+For shared vouchers (`usage_limit > 1`), this still returns the voucher even when multiple parallel users got the same code — the server doesn't enforce exclusivity for shared codes, just tracks usage_count which is incremented at claim/complete time.
 
 Idempotent: calling again with the same `claim_id` returns the same voucher with `noop: true, prior: true`.
 
@@ -156,6 +162,89 @@ Abort the playbook. Call `claim/complete` with `outcome="voucher_pool_empty"` so
 ```
 
 The claim is already completed — too late to lock a voucher for it.
+
+## `POST /api/v1/verify/send-otp`  (Mode B only)
+
+Generate a 6-digit OTP for the phone, send via Twilio (or stdout-stub when Twilio env vars unset).
+
+**Request body**: `{phone, installation_id}`
+
+**200**
+```json
+{
+  "ok": true,
+  "expires_in_seconds": 300,
+  "sms_mode": "twilio",
+  "dev_mode_otp": "924294",
+  "warning": "Twilio not configured; OTP returned in response for dev mode only. ..."
+}
+```
+
+`dev_mode_otp` and `warning` are ONLY present when the server is running without Twilio credentials. Production deployments will omit both — the user must read the OTP from their actual SMS inbox.
+
+## `POST /api/v1/verify/check-otp`  (Mode B only)
+
+Validate the OTP. On success returns a single-use `verification_token` valid for ~5 minutes; the skill passes it to `/voucher/dispense`.
+
+**Request body**: `{phone, code, installation_id}`
+
+**200**: `{ok: true, verification_token: "<opaque>", ttl_seconds: 300}`
+
+**400** wrong code (returns `attempts_used` / `max_attempts`).
+**404** no pending OTP — call /send-otp first.
+**410** OTP expired.
+**429** too many attempts; restart from /send-otp.
+
+## `POST /api/v1/voucher/dispense`  (Mode B only)
+
+Single-call combo: claim/start + voucher allocation + claim/complete(ok). Used when there's no browser tool — the skill just hands the user the code + step-by-step manual instructions.
+
+**Request body**
+```json
+{
+  "deal_id": "cotti-nyc-free-drink-booth-2026",
+  "installation_id": "<uuid>",
+  "phone": "+15551234567",
+  "verification_token": "<from /verify/check-otp>",
+  "mac": "<optional>",
+  "agent_framework": "claude-desktop",
+  "os": "macos",
+  "locale": "en-US",
+  "email": "<optional, consent-based>"
+}
+```
+
+**200**
+```json
+{
+  "claim_id": "...",
+  "claimed_date": "2026-05-30",
+  "merchant_tz": "America/New_York",
+  "deal_meta": {"deal_id": "...", "title": "...", "merchant_id": "cotti"},
+  "voucher": {
+    "code": "aBcDeF1234",
+    "kind": "代金券",
+    "description": "$0 For Drinks",
+    "usage_limit": 1,
+    "discount_type": "full",
+    "discount_value": null
+  },
+  "instructions": [
+    "1. Open the merchant's app (e.g. Cotti at https://mobile.us.cotticoffee.global)",
+    "2. Log in with the phone number you just verified",
+    "3. Go to 我的 → 券码兑换",
+    "4. Enter the code: aBcDeF1234",
+    "5. Tap 兑换 → 确认兑换. The voucher will be credited to your 代金券 pocket."
+  ]
+}
+```
+
+**Show the user `voucher.code` and the `instructions` array verbatim.** Don't paraphrase the steps — they reflect the merchant's current UI.
+
+**401** bad verification_token (token unrecognized or doesn't match this phone). User must restart from send-otp.
+**409** already_claimed_today (same shape as claim/start).
+**503** voucher_pool_empty or daily_quota_exhausted.
+**426** upgrade_required.
 
 ## `POST /api/v1/claim/complete`
 

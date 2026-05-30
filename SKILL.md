@@ -7,7 +7,7 @@ description: Find today's free or deeply discounted food & drink deals near the 
   to auto-order with a discount — even if they don't explicitly say "FreeToday".
   One redemption per merchant per day, enforced server-side.
 metadata:
-  version: "2026.05.30"
+  version: "2026.05.30.1"
 ---
 
 # FreeToday
@@ -25,18 +25,54 @@ The deals catalog and per-merchant ordering **playbooks** live behind an API at 
 Follow these steps in order. Don't skip the confirmation steps — placing an order on someone else's account without their say-so is exactly the kind of thing that gets a skill uninstalled.
 
 1. **Make sure the installation_id exists** (one-time per machine, see [installation identity](#installation-identity)).
-2. **Ask the user for their location** — ZIP code preferred, city name acceptable. Don't guess; ask.
-3. **Fetch deals** — `GET https://deal.echo365.ai/api/v1/deals?zip={zip}` or `?city={city}`. Show the user the list with deal IDs and titles, and let them pick.
-4. **Reserve a same-day claim + fetch the playbook** — `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?, mac?}`. The server uses these to compute three rate-limit keys: `installation_id`, `phone_hash`, and `agent_uid_hash` = sha256(mac + phone + server_pepper). Same-merchant-same-day claims that match ANY of those are rejected.
-   - **409 already_claimed_today** → tell the user when their next attempt is allowed (`claimed_date` + `merchant_tz` are in the response) and stop.
-   - The response does NOT include a voucher — voucher allocation is lazy, see step 6.
-5. **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into a local `vars` dict; `{{var}}` substitutions in subsequent steps draw from it.
-6. **At the `acquire_voucher` step**, call `POST /api/v1/voucher/lock` with `{claim_id}`. The server allocates a real merchant voucher from the pool (lazily — only when the playbook actually reaches the redemption step). Populate:
-   - `vars["voucher_code"]        = response.code`
-   - `vars["voucher_description"] = response.description`
-   - `vars["voucher_kind"]        = response.kind`
-   - **503 voucher_pool_empty** → abort. Call `claim/complete` with `outcome="voucher_pool_empty"` and tell the user honestly.
-7. **Report the outcome** — when the playbook ends (success OR failure), `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`. `outcome="ok"` is the only path that counts as success and burns the voucher. Aborting before `acquire_voucher` is free of voucher-pool impact (the daily slot for that user IS consumed by the started claim). Aborting AT or AFTER `acquire_voucher` releases the voucher back to the pool for outcomes the server can confidently call "not consumed merchant-side" (`user_aborted`, `captcha`, `voucher_pool_empty`); ambiguous outcomes leave it `locked` until the 30-minute stale-lock sweep recycles it.
+2. **Pick a mode** — see [Mode picker](#mode-picker) below. Decide between Mode A (you drive the merchant browser end-to-end) and Mode B (just hand the user a voucher code; they redeem manually).
+3. **Ask the user for their location** — ZIP code preferred, city name acceptable. Don't guess; ask.
+4. **Fetch deals** — `GET https://deal.echo365.ai/api/v1/deals?zip={zip}` or `?city={city}`. Show the user the list with deal IDs and titles, and let them pick.
+5. **Mode A** — Reserve a same-day claim + fetch the playbook: `POST /api/v1/claim/start` with `{deal_id, installation_id, phone?, mac?, mode:"auto", agent_framework?, os?, locale?, email?}`. Then execute the playbook (step 6-8).
+   **Mode B** — Skip to step 9 (verify-then-dispense).
+6. **(Mode A only)** **Execute the playbook** — see [Executing a playbook](#executing-a-playbook). Variables collected via `ask_user` steps go into a local `vars` dict; `{{var}}` substitutions in subsequent steps draw from it.
+7. **(Mode A only)** **At the `acquire_voucher` step**, call `POST /api/v1/voucher/lock` with `{claim_id}`. Populate `vars["voucher_code/description/kind"]` from the response.
+8. **(Mode A only)** **Report the outcome** — `POST /api/v1/claim/complete` with `{claim_id, outcome, step_index?, notes?}`.
+
+9. **(Mode B only)** **Verify the user's phone**:
+   - Ask user for their phone (US format, with country code).
+   - `POST /api/v1/verify/send-otp {phone, installation_id}` — server sends 6-digit code (Twilio in prod; dev mode echoes the code in the response for testing).
+   - Ask user for the SMS code they received.
+   - `POST /api/v1/verify/check-otp {phone, code, installation_id}` → on 200, capture `verification_token`. On 400/410/429, surface the message and try again or restart.
+10. **(Mode B only)** **Dispense the voucher**:
+    - `POST /api/v1/voucher/dispense {deal_id, installation_id, phone, verification_token, mac?, agent_framework?, os?, locale?, email?}`
+    - Response includes `voucher.code`, `voucher.description`, `voucher.kind`, `voucher.discount_type`, and `instructions` (an array of redemption steps).
+    - **DISPLAY THE VOUCHER CODE AND INSTRUCTIONS VERBATIM** to the user — they will manually paste the code into the merchant app.
+
+Common error handling (both modes):
+- **409 already_claimed_today** → tell the user when the merchant clock rolls over (`claimed_date` + `merchant_tz`). Don't retry.
+- **503 voucher_pool_empty** → operator hasn't loaded a fresh batch. Tell user honestly.
+- **503 daily_quota_exhausted** → merchant has hit its daily cap (e.g. 20/day). User must wait until tomorrow.
+
+## Mode picker
+
+The skill has two execution modes:
+
+| | Mode A (auto-redeem) | Mode B (code-only) |
+|---|---|---|
+| What the skill does | Drives the merchant's site to log in, fill voucher, place order | Verifies user's phone via OTP, hands over the voucher code |
+| Browser tool needed | YES (playwright-cli / camoufox-cli / Chrome MCP / browse_url) | NO |
+| User interaction | OTP from merchant's app + CAPTCHA + confirmations | OTP from us (Twilio) only |
+| Where the user goes next | Just pick up at the store | Open merchant app manually, paste code |
+| Daily-slot consumed | Yes | Yes |
+
+**How to pick:**
+
+1. On first invocation in a session, detect whether you have a browser automation tool. Check (in order):
+   - `which playwright-cli camoufox-cli 2>/dev/null` returning a path
+   - Any MCP tool whose name matches `mcp__*browser*` / `mcp__*chrome*`
+   - A built-in `browse_url` / `web_browser` capability advertised in your tool catalog
+2. **If NO browser tool** → use Mode B. Tell the user "I can't drive your browser here, so I'll just hand you the code after phone verification — you'll redeem it yourself in the merchant app." Don't ask; just proceed.
+3. **If browser tool present** → ASK the user once: "Want me to drive the whole flow in a browser (Mode A), or just give you the code and you'll redeem yourself (Mode B)? Mode A handles login + CAPTCHA + checkout for you; Mode B is faster but you'll do the redemption manually."
+4. Remember the user's choice for this session — don't re-ask on subsequent claims in the same conversation.
+5. If the user later types something like "just give me the code" or "I'll do it myself", switch to Mode B mid-conversation.
+
+**Both modes share the same rate-limit** (one claim per merchant per day per user, enforced by installation_id + phone_hash + agent_uid_hash). Switching modes doesn't reset it.
 
 ## Calling the backend
 
@@ -54,30 +90,55 @@ SKILL_VER=$(cat "$SKILL_DIR/VERSION")  # e.g. "2026.05.30"
 curl -sS -H "X-Skill-Version: $SKILL_VER" \
   https://deal.echo365.ai/api/v1/skill-version/freetoday
 
-# List
+# List deals
 curl -sS -H "X-Skill-Version: $SKILL_VER" \
   "https://deal.echo365.ai/api/v1/deals?zip=10001"
+```
 
-# Start a claim
+### Mode A — auto-redeem via browser
+
+```bash
+# claim/start (mode=auto)
 curl -sS -X POST https://deal.echo365.ai/api/v1/claim/start \
-  -H "X-Skill-Version: $SKILL_VER" \
-  -H 'Content-Type: application/json' \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
   -d '{"deal_id":"cotti-nyc-free-drink-booth-2026",
-       "installation_id":"<from-local-file>",
-       "phone":"+15551234567",
-       "mac":"<see MAC detection section>"}'
+       "installation_id":"<from-local-file>","phone":"+15551234567",
+       "mac":"<MAC>", "mode":"auto",
+       "agent_framework":"claude-code","os":"macos","locale":"en-US"}'
 
-# Acquire voucher (at the acquire_voucher step in the playbook)
+# At the acquire_voucher step in the playbook
 curl -sS -X POST https://deal.echo365.ai/api/v1/voucher/lock \
-  -H "X-Skill-Version: $SKILL_VER" \
-  -H 'Content-Type: application/json' \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
   -d '{"claim_id":"..."}'
 
-# Complete it (after the playbook finishes, success or fail)
+# After the playbook ends
 curl -sS -X POST https://deal.echo365.ai/api/v1/claim/complete \
-  -H "X-Skill-Version: $SKILL_VER" \
-  -H 'Content-Type: application/json' \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
   -d '{"claim_id":"...","outcome":"ok"}'
+```
+
+### Mode B — code-only with phone OTP verification
+
+```bash
+# 1. Send OTP (server uses Twilio if configured; dev mode logs to stdout)
+curl -sS -X POST https://deal.echo365.ai/api/v1/verify/send-otp \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
+  -d '{"phone":"+15551234567","installation_id":"<from-local-file>"}'
+
+# 2. After user types the SMS code back to you
+curl -sS -X POST https://deal.echo365.ai/api/v1/verify/check-otp \
+  -H "Content-Type: application/json" \
+  -d '{"phone":"+15551234567","code":"924294","installation_id":"<...>"}'
+# → captures verification_token from the response
+
+# 3. Dispense the voucher (one round trip; server claims+allocates+completes)
+curl -sS -X POST https://deal.echo365.ai/api/v1/voucher/dispense \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
+  -d '{"deal_id":"cotti-nyc-free-drink-booth-2026",
+       "installation_id":"<from-local-file>","phone":"+15551234567",
+       "verification_token":"<from-check-otp>",
+       "agent_framework":"claude-desktop","os":"macos"}'
+# → response includes voucher.code + instructions array; show user verbatim
 ```
 
 If `curl` isn't in the host's tool palette, use whatever HTTP capability is: native `fetch`, a Python `requests` snippet, an MCP HTTP tool, etc. Don't fixate on shell — but always send the header.
