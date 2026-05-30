@@ -6,6 +6,8 @@ description: Find today's free or deeply discounted food & drink deals near the 
   promos, "what's free near me", "any deals nearby", "anything free today", or asks
   to auto-order with a discount — even if they don't explicitly say "FreeToday".
   One redemption per merchant per day, enforced server-side.
+metadata:
+  version: "2026.05.30"
 ---
 
 # FreeToday
@@ -38,26 +40,69 @@ Follow these steps in order. Don't skip the confirmation steps — placing an or
 
 ## Calling the backend
 
-Base URL: `https://deal.echo365.ai/api/v1`. No auth on `/deals` or `/claim/*`. See `references/api-contract.md` for the full request/response shapes.
+Base URL: `https://deal.echo365.ai/api/v1`. No auth on `/deals`, `/claim/*`, `/voucher/*`. See `references/api-contract.md` for the full request/response shapes.
 
+**Every API call MUST include the `X-Skill-Version` header.** Read it from the `VERSION` file alongside this `SKILL.md`:
+
+```bash
+SKILL_DIR="$(dirname "$0")"           # or wherever this skill is installed
+SKILL_VER=$(cat "$SKILL_DIR/VERSION")  # e.g. "2026.05.30"
 ```
-# List
-curl -sS "https://deal.echo365.ai/api/v1/deals?zip=10001"
 
-# Start a claim (returns playbook + claim_id, or 409)
+```bash
+# Probe (cheap, no claim allocated)
+curl -sS -H "X-Skill-Version: $SKILL_VER" \
+  https://deal.echo365.ai/api/v1/skill-version/freetoday
+
+# List
+curl -sS -H "X-Skill-Version: $SKILL_VER" \
+  "https://deal.echo365.ai/api/v1/deals?zip=10001"
+
+# Start a claim
 curl -sS -X POST https://deal.echo365.ai/api/v1/claim/start \
+  -H "X-Skill-Version: $SKILL_VER" \
   -H 'Content-Type: application/json' \
   -d '{"deal_id":"cotti-nyc-free-drink-booth-2026",
        "installation_id":"<from-local-file>",
-       "phone":"+15551234567"}'
+       "phone":"+15551234567",
+       "mac":"<see MAC detection section>"}'
+
+# Acquire voucher (at the acquire_voucher step in the playbook)
+curl -sS -X POST https://deal.echo365.ai/api/v1/voucher/lock \
+  -H "X-Skill-Version: $SKILL_VER" \
+  -H 'Content-Type: application/json' \
+  -d '{"claim_id":"..."}'
 
 # Complete it (after the playbook finishes, success or fail)
 curl -sS -X POST https://deal.echo365.ai/api/v1/claim/complete \
+  -H "X-Skill-Version: $SKILL_VER" \
   -H 'Content-Type: application/json' \
   -d '{"claim_id":"...","outcome":"ok"}'
 ```
 
-If `curl` isn't in the host's tool palette, use whatever HTTP capability is: native `fetch`, a Python `requests` snippet, an MCP HTTP tool, etc. Don't fixate on shell.
+If `curl` isn't in the host's tool palette, use whatever HTTP capability is: native `fetch`, a Python `requests` snippet, an MCP HTTP tool, etc. Don't fixate on shell — but always send the header.
+
+### Handling the version response
+
+Every successful response body has a `skill_meta` field:
+
+```json
+{
+  "skill_meta": {
+    "your_version": "2026.05.30",
+    "latest": "2026.06.15",
+    "min_required": "2026.05.30",
+    "update_available": true,
+    "update_required": false,
+    "notes_url": "https://github.com/colakang/freetoday-skills/releases"
+  }
+}
+```
+
+Behaviour:
+- `update_required: true` → server already returned **426 Upgrade Required** before reaching here, with a clear upgrade command in `detail.message`. Surface that to the user verbatim and stop.
+- `update_available: true` → soft notice. Tell the user once per session: "📦 freetoday update available ({{latest}}). Run `git -C ~/.claude/skills/freetoday pull && git checkout {{latest}}` when convenient." Then continue normally.
+- `update_available: false` → silent; carry on.
 
 ## Installation identity
 
