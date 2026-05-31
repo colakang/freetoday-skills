@@ -242,6 +242,7 @@ Single-call combo: claim/start + voucher allocation + claim/complete(ok). Used w
 **Show the user `voucher.code` and the `instructions` array verbatim.** Don't paraphrase the steps — they reflect the merchant's current UI.
 
 **401** bad verification_token (token unrecognized or doesn't match this phone). User must restart from send-otp.
+**403** `phone_not_bound` — this installation never verified a phone; run send-otp + check-otp first. Or `phone_binding_mismatch` — the request's phone differs from the phone this installation verified; re-verify the phone you want to use. (The server binds a phone to the installation on the first successful check-otp, and dispense requires that binding.)
 **409** already_claimed_today (same shape as claim/start).
 **503** voucher_pool_empty or daily_quota_exhausted.
 **426** upgrade_required.

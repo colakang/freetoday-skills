@@ -10,17 +10,17 @@ The skill doesn't ship its own browser. It uses whatever the host agent has. Her
 | A built-in `browse_url` / `web_browser` / similar | Section D |
 | Only `WebFetch` / HTTP capability | Stop — see "When you don't have a browser" |
 
-The host agent's CLAUDE.md or system context will usually disclose which of these is available. If unsure, run `which playwright-cli camoufox-cli 2>/dev/null` first; check tool listings for the MCP path.
+The host agent's system context (e.g. a CLAUDE.md, AGENTS.md, or tool catalog) will usually disclose which of these is available. If unsure, run `which playwright-cli camoufox-cli 2>/dev/null` first; check tool listings for the MCP path.
 
 ## A. playwright-cli
 
-Pattern (from the user's global CLAUDE.md):
+Typical session-reuse pattern:
 
 ```bash
 # Once per session — bootstrap if not alive
 playwright-cli list | grep "status: open" || {
   playwright-cli open --headed
-  playwright-cli state-load ~/.claude/auth-sessions.json
+  playwright-cli state-load "$HOME/.config/freetoday/auth-state.json"  # if a saved session exists
 }
 
 # Reuse tab if URL already matches; otherwise navigate the current tab
@@ -40,9 +40,9 @@ Action mapping:
 | `ask_user` | Ask in chat. No browser involvement. |
 | `confirm_with_user` | Ask in chat. No browser involvement. |
 
-State persistence (login session): on the FIRST successful run, after login, `playwright-cli state-save ~/.claude/auth-sessions.json` so subsequent runs skip the OTP step. Per CLAUDE.md the session is a long-lived OS process — don't kill it.
+State persistence (login session): on the FIRST successful run, after login, `playwright-cli state-save "$HOME/.config/freetoday/auth-state.json"` so subsequent runs skip the OTP step. The playwright-cli session is a long-lived OS process — don't kill it between steps.
 
-Sandbox note (also from CLAUDE.md): playwright-cli usually needs `dangerouslyDisableSandbox: true` to launch Chrome; that's a Claude Code-specific flag, irrelevant on other hosts.
+Sandbox note: some hosts run playwright-cli inside a sandbox and need an explicit "disable sandbox" flag to launch Chrome (e.g. Claude Code's `dangerouslyDisableSandbox: true`). This is host-specific; on most hosts it's irrelevant.
 
 ## B. camoufox-cli
 
@@ -89,7 +89,7 @@ This degrades gracefully — better than silently failing or hallucinating selec
 
 Across all of these:
 
-- Browser tools that write profile/state to `~/.config/...`, `~/.cache/...`, or `~/.claude/...` may need explicit permission grants on Claude Code. Check the host's setting documentation if first invocation fails.
+- Browser tools that write profile/state under `~/.config/...` or `~/.cache/...` may need explicit permission grants on some hosts. Check the host's permission/settings docs if the first invocation fails.
 - The skill's own writes are limited to one file: `~/.config/freetoday/installation_id`. That's it.
 
 ## A note on rate-limit and tool choice
