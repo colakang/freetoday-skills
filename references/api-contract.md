@@ -195,17 +195,23 @@ Validate the OTP. On success returns a single-use `verification_token` valid for
 **410** OTP expired.
 **429** too many attempts; restart from /send-otp.
 
-## `POST /api/v1/voucher/dispense`  (Mode B only)
+## `POST /api/v1/voucher/dispense`  (code-handoff path)
 
-Single-call combo: claim/start + voucher allocation + claim/complete(ok). Used when there's no browser tool — the skill just hands the user the code + step-by-step manual instructions.
+Single-call combo: claim + voucher allocation + completion. Used when the user redeems
+themselves. `phone` + `verification_token` are **only needed the first time** an
+installation dispenses (to bind a phone). Once bound, send just `installation_id` —
+the per-installation/merchant/day limit is the gate; no OTP is re-required.
 
-**Request body**
+**Recommended call pattern:** try with `installation_id` alone first; on **403
+phone_not_bound**, run the one-time OTP flow and retry with `phone` + `verification_token`.
+
+**Request body** (`phone` + `verification_token` optional once bound)
 ```json
 {
   "deal_id": "cotti-nyc-free-drink-booth-2026",
   "installation_id": "<uuid>",
-  "phone": "+15551234567",
-  "verification_token": "<from /verify/check-otp>",
+  "phone": "+15551234567",              // first-time only
+  "verification_token": "<from /verify/check-otp>",  // first-time only
   "mac": "<optional>",
   "agent_framework": "claude-desktop",
   "os": "macos",
@@ -241,11 +247,16 @@ Single-call combo: claim/start + voucher allocation + claim/complete(ok). Used w
 
 **Show the user `voucher.code` and the `instructions` array verbatim.** Don't paraphrase the steps — they reflect the merchant's current UI.
 
-**401** bad verification_token (token unrecognized or doesn't match this phone). User must restart from send-otp.
-**403** `phone_not_bound` — this installation never verified a phone; run send-otp + check-otp first. Or `phone_binding_mismatch` — the request's phone differs from the phone this installation verified; re-verify the phone you want to use. (The server binds a phone to the installation on the first successful check-otp, and dispense requires that binding.)
+**401** bad verification_token (first-time only — token unrecognized or doesn't match the phone). Restart from send-otp.
+**403** `phone_not_bound` — first redemption on this installation; supply `phone` + `verification_token` (run send-otp + check-otp first). Or `phone_binding_mismatch` — a `phone` was supplied that differs from the one this installation is already bound to; omit `phone` to use the bound one, or this is a different user.
 **409** already_claimed_today (same shape as claim/start).
 **503** voucher_pool_empty or daily_quota_exhausted.
 **426** upgrade_required.
+
+> Binding is established once — here (code-handoff first time) or automatically on a
+> successful auto-redeem (`claim/complete outcome="ok"`, where the merchant's own phone
+> login proved ownership). It is never re-verified on later redemptions; the
+> one-per-merchant-per-day rate-limit is the abuse control.
 
 ## `POST /api/v1/claim/complete`
 

@@ -103,28 +103,37 @@ Both paths share the same one-per-merchant-per-day limit; switching doesn't rese
 3. **At the `acquire_voucher` step**, `POST /api/v1/voucher/lock {claim_id}` and load
    `vars["voucher_code" / "voucher_description" / "voucher_kind"]` from the response.
 4. **Report the outcome** — `POST /api/v1/claim/complete {claim_id, outcome, step_index?, notes?}`.
+   On `outcome:"ok"`, the server binds the merchant-login phone to this installation
+   automatically (the merchant's own login proved phone ownership) — so a later
+   code-handoff redemption on the same device won't need a separate OTP.
 
 ## Code-handoff path
 
-The user redeems themselves; the agent just proves phone ownership and fetches a code.
+The user redeems themselves; the agent fetches a code. Phone verification is a
+**one-time** step — the first time this installation ever redeems, it verifies a phone
+to establish identity. After that, no OTP is needed; the one-per-merchant-per-day limit
+is the gate.
 
-1. **Get the phone.** Ask for it the **first time only** in a session
-   ("What's your mobile number? US format with country code, e.g. +1 555 123 4567").
-   Reuse that number for any further deals this session — don't re-ask.
-2. **Send the code** — `POST /api/v1/verify/send-otp {phone, installation_id}`. The
-   server texts a 6-digit code to the user (real SMS).
-3. **Verify** — ask the user for the code they received, then
-   `POST /api/v1/verify/check-otp {phone, code, installation_id}`. On 200, capture
-   `verification_token`. On 400/410/429, surface the message and resend/retry.
-4. **Dispense** — `POST /api/v1/voucher/dispense {deal_id, installation_id, phone,
-   verification_token, agent_framework?, os?, locale?}`. The response carries
-   `voucher.code`, `voucher.description`, and an `instructions` array.
-5. **Show the user the `voucher.code` and the `instructions` verbatim.** They paste the
-   code into the merchant app themselves.
+1. **Try to dispense directly** — `POST /api/v1/voucher/dispense {deal_id,
+   installation_id, agent_framework?, os?, locale?}`.
+   - **200** → this installation is already known. Jump to step 4.
+   - **403 phone_not_bound** → first redemption ever on this device; do the one-time
+     phone check in steps 2-3, then retry dispense.
+2. **Verify a phone (first time only)** — ask for the user's mobile
+   ("What's your mobile number? US format with country code, e.g. +1 555 123 4567"),
+   then `POST /api/v1/verify/send-otp {phone, installation_id}` (server texts a 6-digit
+   code), ask for the code, and `POST /api/v1/verify/check-otp {phone, code,
+   installation_id}`. On 200, capture `verification_token`. On 400/410/429 surface the
+   message and resend/retry.
+3. **Dispense with the binding** — retry `POST /api/v1/voucher/dispense` adding
+   `phone` + `verification_token`. This binds the phone to the installation and returns
+   the voucher.
+4. **Show the `voucher.code` and the `instructions` array verbatim.** The user pastes
+   the code into the merchant app themselves.
 
-> The phone is verified server-side and bound to this installation on first use; the
-> dispense step requires that binding, so a valid code can't be spent from an
-> installation that never verified the matching phone.
+> The phone binding is set once (here, or — for the auto-redeem path — automatically on
+> the first successful merchant login). It identifies the installation; it is NOT
+> re-verified on later redemptions.
 
 ## Calling the backend
 
@@ -168,15 +177,22 @@ curl -sS -X POST "$BASE/api/v1/claim/complete" \
 ### Code-handoff calls
 
 ```bash
+# 1. Optimistic dispense — works directly if this installation is already bound
+curl -sS -X POST "$BASE/api/v1/voucher/dispense" \
+  -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
+  -d '{"deal_id":"…","installation_id":"…","agent_framework":"…","os":"…"}'
+#  → 200 voucher.code + instructions[]   (done)
+#  → 403 phone_not_bound  → first time on this device, do the OTP steps below
+
+# 2. (first time only) one-time phone verification
 curl -sS -X POST "$BASE/api/v1/verify/send-otp" \
   -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
   -d '{"phone":"+15551234567","installation_id":"…"}'
-
 curl -sS -X POST "$BASE/api/v1/verify/check-otp" \
   -H 'Content-Type: application/json' \
-  -d '{"phone":"+15551234567","code":"123456","installation_id":"…"}'
-#  → verification_token
+  -d '{"phone":"+15551234567","code":"123456","installation_id":"…"}'   # → verification_token
 
+# 3. (first time only) retry dispense with phone + token to bind and get the code
 curl -sS -X POST "$BASE/api/v1/voucher/dispense" \
   -H "X-Skill-Version: $SKILL_VER" -H 'Content-Type: application/json' \
   -d '{"deal_id":"…","installation_id":"…","phone":"+15551234567",
