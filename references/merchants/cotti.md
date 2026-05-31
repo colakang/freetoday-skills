@@ -87,5 +87,5 @@ There is no delivery option in the US Cotti app. Voucher redemption credits the 
 
 ## Cross-references
 
-- `cotti-codes` sidecar (server-side at `127.0.0.1:8090` on ai-relay): mints `COTTI-Qn-XXXXXX` codes at the NYC booth. Separate from Cotti's voucher system; only used for booth-attribution / counter handover.
-- Booth Flowise chatflow: `09c3de37-5cd8-401d-9cc5-198f5404dca0` — issues the COTTI-Qn codes during the quiz.
+- `cotti-codes` — a separate loopback-only booth sidecar that mints `COTTI-Qn-XXXXXX` attribution codes at the NYC booth. Distinct from Cotti's own voucher system; used only for booth-attribution / counter handover. Not part of the freetoday redemption path.
+- The booth quiz chatbot (which issues those COTTI-Qn codes) is a separate operator-side deployment and is not reachable or needed by this skill.
