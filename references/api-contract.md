@@ -39,7 +39,9 @@ Single-deal lookup, same shape as one element of the list above. **404** if unkn
 
 ## `POST /api/v1/claim/start`
 
-Reserves a same-day claim slot. Computes three rate-limit keys server-side: `installation_id`, `phone_hash`, and `agent_uid_hash` = sha256(server_pepper, mac, phone). Any same-merchant-same-day match in `('started','succeeded')` blocks.
+Opens an auto-redeem attempt. This is **non-committal** — starting (and even abandoning) an auto-redeem does NOT consume your one-per-merchant-per-day slot. The slot is only taken later, at `voucher/lock` (the redeem step), so a stalled or abandoned attempt never blocks a retry or the code-handoff fallback.
+
+Computes three rate-limit keys server-side: `installation_id`, `phone_hash`, and `agent_uid_hash` = sha256(server_pepper, mac, phone). It returns **409 only if a *real* claim already exists today** — i.e. one that has already locked a voucher or succeeded. A prior voucher-less attempt from the same installation is silently superseded.
 
 **Request body**
 ```json
@@ -162,6 +164,13 @@ Abort the playbook. Call `claim/complete` with `outcome="voucher_pool_empty"` so
 ```
 
 The claim is already completed — too late to lock a voucher for it.
+
+**409 — already_claimed_today**
+```json
+{"detail": {"error": "already_claimed_today", "merchant_id": "cotti", "claimed_date": "2026-06-01", "existing_claim_id": "...", "existing_status": "succeeded", "message": "..."}}
+```
+
+This is the real daily-slot gate. It fires here (not at `claim/start`) because the slot is only consumed when a voucher is actually allocated. Means another redemption — e.g. a parallel code-handoff — already took today's slot for this user. Don't retry; tell the user when the merchant clock rolls over and stop.
 
 ## `POST /api/v1/verify/send-otp`  (Mode B only)
 
