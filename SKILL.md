@@ -9,7 +9,7 @@ description: Find today's free or deeply discounted food & drink deals near the 
   browser-automation tool is optional (only needed for hands-free auto-redeem).
   One redemption per merchant per day, enforced server-side.
 metadata:
-  version: "2026.05.31"
+  version: "2026.06.02"
 ---
 
 # FreeToday
@@ -26,7 +26,7 @@ their hands one of two ways:
 
 This skill is host-agnostic: it works in **any** agent that can make HTTP requests
 (Claude Code, Claude Desktop, Codex, Cursor, OpenClaw, custom agents, …). The deals
-catalog and per-merchant **playbooks** live behind an API at `https://deal.echo365.ai`;
+catalog and per-merchant **playbooks** live behind an API at `https://freetoday.ai`;
 the skill is intentionally thin — it talks to the API and executes whatever the API
 returns, using whatever tools the host happens to have. Merchant flows change without
 touching the skill.
@@ -148,7 +148,7 @@ is the gate.
 
 ## Calling the backend
 
-Base URL: `https://deal.echo365.ai/api/v1`. No API key needed. See
+Base URL: `https://freetoday.ai/api/v1`. No API key needed. See
 `references/api-contract.md` for full request/response shapes.
 
 **Every API call MUST send the `X-Skill-Version` header**, read from the `VERSION`
@@ -211,7 +211,7 @@ curl -sS -X POST "$BASE/api/v1/voucher/dispense" \
 #  → voucher.code + instructions[]  (show the user verbatim)
 ```
 
-`$BASE` = `https://deal.echo365.ai`.
+`$BASE` = `https://freetoday.ai`.
 
 ### Version handling
 

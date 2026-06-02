@@ -1,10 +1,10 @@
 # freetoday
 
 [![Star on GitHub](https://img.shields.io/github/stars/colakang/freetoday-skills?style=social)](https://github.com/colakang/freetoday-skills/stargazers)
-[![Installs](https://img.shields.io/endpoint?url=https%3A%2F%2Fdeal.echo365.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dinstalls)](https://deal.echo365.ai)
-[![Active users](https://img.shields.io/endpoint?url=https%3A%2F%2Fdeal.echo365.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dactive_users)](https://deal.echo365.ai)
+[![Installs](https://img.shields.io/endpoint?url=https%3A%2F%2Ffreetoday.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dinstalls)](https://freetoday.ai)
+[![Active users](https://img.shields.io/endpoint?url=https%3A%2F%2Ffreetoday.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dactive_users)](https://freetoday.ai)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
-![Version](https://img.shields.io/badge/skill-2026.06.01.1-brightgreen)
+![Version](https://img.shields.io/badge/skill-2026.06.02-brightgreen)
 
 An agent skill that finds today's free or deeply-discounted food & drinks near you and
 either **redeems them for you automatically** (driving the merchant's site) or **hands
@@ -13,7 +13,7 @@ you a voucher code** to redeem yourself after a quick phone verification.
 > **⭐ Found a free coffee through this? Star the repo and send it to a friend.**
 > Every star helps more partners come on board — which means more free stuff for
 > everyone. Two seconds: [**star it**](https://github.com/colakang/freetoday-skills) and
-> share `https://deal.echo365.ai` with someone who'd use it.
+> share `https://freetoday.ai` with someone who'd use it.
 
 Works in **any agent that can make HTTP requests** — Claude Code, Claude Desktop,
 Codex, Cursor, OpenClaw, or your own. A browser-automation tool is *optional*: it's
@@ -23,7 +23,7 @@ code-handoff flow.
 ## What this is
 
 A thin instruction package (`SKILL.md` + `references/`). The deals catalog and the
-per-merchant redemption **playbooks** live behind an API at `https://deal.echo365.ai`,
+per-merchant redemption **playbooks** live behind an API at `https://freetoday.ai`,
 so merchant flows can change without you re-installing anything.
 
 ## Install
@@ -32,7 +32,7 @@ The skill is just a folder of Markdown. "Installing" means putting that folder w
 your agent looks for skills. The one-liner auto-detects the right place:
 
 ```bash
-curl -fsSL https://deal.echo365.ai/install.sh | sh
+curl -fsSL https://freetoday.ai/install.sh | sh
 ```
 
 Or clone it yourself into the location your agent uses:
@@ -120,7 +120,7 @@ evals/evals.json          trigger eval prompts
 freetoday grows by word of mouth — no ads, no growth hacks. If it got you something free:
 
 - ⭐ **Star this repo** — it's the signal partners look at before they sign on.
-- 📣 **Share it** — send `https://deal.echo365.ai` to a friend, or post the deal you found.
+- 📣 **Share it** — send `https://freetoday.ai` to a friend, or post the deal you found.
 - 🛠️ **Bring a merchant** — if you run (or know) a spot that wants to give a little away,
   open an issue. New cities and merchants are how this gets useful outside NYC.
 

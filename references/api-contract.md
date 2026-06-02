@@ -1,6 +1,6 @@
 # deals-api contract
 
-Base URL: `https://deal.echo365.ai/api/v1`. JSON in, JSON out. Public endpoints have no auth; admin endpoints require `X-Admin-Key` and are not invoked by the skill.
+Base URL: `https://freetoday.ai/api/v1`. JSON in, JSON out. Public endpoints have no auth; admin endpoints require `X-Admin-Key` and are not invoked by the skill. (`https://deal.echo365.ai` remains a working backup alias for the same API, but `freetoday.ai` is canonical.)
 
 ## `GET /api/v1/deals?zip=10001` or `?city=NYC`
 
