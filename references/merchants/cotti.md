@@ -29,6 +29,8 @@ These map cleanly to:
 
 For unnamed widgets (the agreement toggle, for example), the playbook falls back to coordinate-relative descriptions in `confirm_with_user` steps that hand off to the user.
 
+**Cotti renders in the browser's language.** A US/English-locale user sees an English UI, so the Chinese `name` in each selector won't match. From v5 the playbook ships `selector_en` (English accessible name) and `intent` (role + meaning) on every language-bound step — match by role + meaning across locales, and speak to the user in the language you observe. See "Localized selectors" in `playbook-schema.md`.
+
 ## Login
 
 Phone + SMS OTP only. No email/password, no Apple/Google social path that works without app context. Cotti's flow:
@@ -66,9 +68,17 @@ What this means for the booth funnel:
 
 If you're updating the operator-side process so that COTTI-Qn codes are pre-loaded into Cotti's promo system as aliases (which would let users redeem with either format), update this section and the playbook's `ask_user` prompt accordingly.
 
+## Participating store (NY Tech Week 2026)
+
+This promo's voucher is redeemable at one participating location:
+
+- **Cotti Coffee – Penn Station**, 345 7th Ave Retail B, New York, NY 10001
+
+Schedule: **Jun 3–5 and Jun 9–10, 2026**, 15 codes/day, first-come-first-served. The final two `confirm_with_user` steps (and the deal's `redeem_info.stores`) name this store; surface it to the user.
+
 ## Order model — pickup only
 
-There is no delivery option in the US Cotti app. Voucher redemption credits the account; the user then taps "Order Now" to attach the voucher to an actual order and pick it up at a chosen store. v1 of the playbook stops at "voucher in account" — the order-placement step is a separate v2 playbook (TBD).
+There is no delivery option in the US Cotti app. Voucher redemption credits the account; the user then taps "Order Now" to attach the voucher to an actual order and pick it up at the participating store above. v1 of the playbook stops at "voucher in account" — the order-placement step is a separate v2 playbook (TBD).
 
 ## Known quirks
 
@@ -84,6 +94,8 @@ There is no delivery option in the US Cotti app. Voucher redemption credits the 
 | v1 | Placeholder skeleton with `__TBD_*__` selectors (never lived in production). |
 | v2 | First real selectors mapped from a manual flow on 2026-05-29. Uses Playwright-style role+name selectors, hybrid auto+manual (skill drives what it can, hands off to user at CAPTCHA). Voucher pre-allocated at claim/start. |
 | v3 | Adds the `acquire_voucher` step (lazy allocation via `POST /api/v1/voucher/lock`). Voucher is locked only when the playbook actually reaches the Cotti 券码兑换 screen — users who abort during login don't burn vouchers. Stops at "voucher credited" — no auto-order. |
+| v4 | Final confirmation pins redemption to the participating store: Cotti Coffee – Penn Station, 345 7th Ave Retail B, NY 10001. |
+| v5 | Localization: every language-bound step carries `selector_en` + `intent`; confirm/ask prompts are bilingual. Handles English-locale users whose Cotti UI is in English. |
 
 ## Cross-references
 

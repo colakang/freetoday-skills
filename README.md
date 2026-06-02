@@ -1,8 +1,17 @@
 # freetoday
 
+[![Star on GitHub](https://img.shields.io/github/stars/colakang/freetoday-skills?style=social)](https://github.com/colakang/freetoday-skills/stargazers)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+![Version](https://img.shields.io/badge/skill-2026.06.01.1-brightgreen)
+
 An agent skill that finds today's free or deeply-discounted food & drinks near you and
 either **redeems them for you automatically** (driving the merchant's site) or **hands
 you a voucher code** to redeem yourself after a quick phone verification.
+
+> **⭐ Found a free coffee through this? Star the repo and send it to a friend.**
+> Every star helps more partners come on board — which means more free stuff for
+> everyone. Two seconds: [**star it**](https://github.com/colakang/freetoday-skills) and
+> share `https://deal.echo365.ai` with someone who'd use it.
 
 Works in **any agent that can make HTTP requests** — Claude Code, Claude Desktop,
 Codex, Cursor, OpenClaw, or your own. A browser-automation tool is *optional*: it's
@@ -103,6 +112,15 @@ evals/evals.json          trigger eval prompts
 ## See also
 
 - Companion campaign: Cotti × OpenClaw NY Tech Week 2026 booth.
+
+## Spread the word
+
+freetoday grows by word of mouth — no ads, no growth hacks. If it got you something free:
+
+- ⭐ **Star this repo** — it's the signal partners look at before they sign on.
+- 📣 **Share it** — send `https://deal.echo365.ai` to a friend, or post the deal you found.
+- 🛠️ **Bring a merchant** — if you run (or know) a spot that wants to give a little away,
+  open an issue. New cities and merchants are how this gets useful outside NYC.
 
 ## License
 

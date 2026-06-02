@@ -30,6 +30,22 @@ Picking which to use is up to the playbook author; the executor is expected to p
 
 For Flutter Web apps specifically (Cotti, see `merchants/cotti.md`), CSS will not work — the page renders to a canvas, and `role=…` is the only viable form. The browser tool may need to click the `<flt-semantics-placeholder>` element to populate the a11y tree first; most tools do this implicitly when they request an accessibility snapshot.
 
+### Localized selectors (`selector_en`, `intent`)
+
+Many merchant apps render in the **browser's language**, so an accessibility `name` is locale-dependent — a US/English-locale user sees different label text than the playbook author captured. To stay robust, a step may carry, alongside `selector`:
+
+- **`selector_en`** — the same selector with the element's **English** accessible name.
+- **`intent`** — a short human description of the target element.
+
+Resolution order when present:
+1. Try `selector` (the primary, often non-English name).
+2. If it doesn't match, try `selector_en`.
+3. If neither name is present in the live a11y tree, locate the element by **`intent`** (role + meaning) — match the element that plays that role, whatever its displayed language.
+
+When a step has none of these, use `selector` literally.
+
+**Speak the user's language.** `confirm_with_user` / `ask_user` prompts may quote on-screen text in more than one language (e.g. `'Continue' / '继续'`). Show the user the wording that matches the language you actually observe on screen; don't read them a label in a language their UI isn't using.
+
 ## Actions
 
 ### `navigate`
