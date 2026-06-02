@@ -1,6 +1,8 @@
 # freetoday
 
 [![Star on GitHub](https://img.shields.io/github/stars/colakang/freetoday-skills?style=social)](https://github.com/colakang/freetoday-skills/stargazers)
+[![Installs](https://img.shields.io/endpoint?url=https%3A%2F%2Fdeal.echo365.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dinstalls)](https://deal.echo365.ai)
+[![Active users](https://img.shields.io/endpoint?url=https%3A%2F%2Fdeal.echo365.ai%2Fapi%2Fv1%2Fstats%2Fbadge%3Fmetric%3Dactive_users)](https://deal.echo365.ai)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 ![Version](https://img.shields.io/badge/skill-2026.06.01.1-brightgreen)
 
