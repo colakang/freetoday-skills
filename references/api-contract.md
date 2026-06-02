@@ -25,11 +25,22 @@ Lists active deals matching the user's location.
       "playbook_id": "cotti-pickup-v1",
       "requires_code": true,
       "active": true,
+      "redeem_modes": ["auto", "code"],
+      "stores": [
+        {"name": "Cotti Coffee – Penn Station", "address": "345 7th Ave Retail B, New York, NY 10001"}
+      ],
       "created_at": "2026-05-29 20:57:42"
     }
   ]
 }
 ```
+
+- **`redeem_modes`** — which redemption paths this deal supports: `"auto"` (Mode A, the
+  skill drives the merchant site) and/or `"code"` (Mode B, code-handoff). A code-only
+  deal (e.g. an in-store partner with no app automation) returns `["code"]`; offer only
+  that path and don't ask "auto or code?".
+- **`stores`** — physical redemption location(s). Show these to the user; for a
+  code-only/in-store deal this is where they bring the code.
 
 **400** — neither `zip` nor `city` given.
 
@@ -73,10 +84,18 @@ Computes three rate-limit keys server-side: `installation_id`, `phone_hash`, and
   "deal_meta": {
     "deal_id": "cotti-nyc-free-drink-booth-2026",
     "title": "Free drink at Cotti Coffee NYC",
-    "requires_voucher": true
+    "requires_voucher": true,
+    "redeem_modes": ["auto", "code"],
+    "stores": [{"name": "Cotti Coffee – Penn Station", "address": "345 7th Ave Retail B, New York, NY 10001"}]
   }
 }
 ```
+
+**409 — mode_not_supported** (you sent `mode:"auto"` for a deal whose `redeem_modes` is `["code"]`)
+```json
+{"detail": {"error": "mode_not_supported", "requested_mode": "auto", "supported_modes": ["code"], "deal_id": "...", "message": "...Use the code-handoff path (voucher/dispense)."}}
+```
+Switch to a path in `supported_modes`. For `["code"]`, use `voucher/dispense`.
 
 **The response does NOT include a voucher.** Voucher allocation is lazy: call `POST /api/v1/voucher/lock` only when the playbook reaches the `acquire_voucher` step. This keeps the merchant pool intact for users who abort before the redemption screen.
 
@@ -244,21 +263,24 @@ phone_not_bound**, run the one-time OTP flow and retry with `phone` + `verificat
     "discount_type": "full",
     "discount_value": null
   },
+  "stores": [
+    {"name": "Cotti Coffee – Penn Station", "address": "345 7th Ave Retail B, New York, NY 10001"}
+  ],
   "instructions": [
-    "1. Open the merchant's app (e.g. Cotti at https://mobile.us.cotticoffee.global)",
-    "2. Log in with the phone number you just verified",
-    "3. Go to 我的 → 券码兑换",
-    "4. Enter the code: aBcDeF1234",
-    "5. Tap 兑换 → 确认兑换. The voucher will be credited to your 代金券 pocket."
+    "Open the Cotti app (https://mobile.us.cotticoffee.global) and log in with the phone you just verified",
+    "Go to 我的 → 券码兑换 and enter the code: aBcDeF1234",
+    "Tap 兑换 → 确认兑换 — the voucher lands in your 代金券 pocket",
+    "Redeemable in-store at: Cotti Coffee – Penn Station — 345 7th Ave Retail B, New York, NY 10001"
   ]
 }
 ```
 
-**Show the user `voucher.code` and the `instructions` array verbatim.** Don't paraphrase the steps — they reflect the merchant's current UI.
+**Show the user `voucher.code`, the `instructions` array, and `stores` verbatim.** Don't paraphrase — the steps are merchant-specific and may be in-app (Cotti) or "show the code at the counter" (an in-store partner like TEAPULSE). The instructions always end with the redemption store(s).
 
 **401** bad verification_token (first-time only — token unrecognized or doesn't match the phone). Restart from send-otp.
 **403** `phone_not_bound` — first redemption on this installation; supply `phone` + `verification_token` (run send-otp + check-otp first). Or `phone_binding_mismatch` — a `phone` was supplied that differs from the one this installation is already bound to; omit `phone` to use the bound one, or this is a different user.
 **409** already_claimed_today (same shape as claim/start).
+**409** mode_not_supported — this deal is auto-only (`redeem_modes` lacks `"code"`); drive the playbook via claim/start instead.
 **503** voucher_pool_empty or daily_quota_exhausted.
 **426** upgrade_required.
 

@@ -47,17 +47,22 @@ without an explicit yes is exactly what gets a skill uninstalled.
    [Installation identity](#installation-identity)).
 2. **Ask the user for their location** — ZIP preferred, city acceptable. Don't guess.
 3. **Fetch deals** — `GET /api/v1/deals?zip={zip}` (or `?city={city}`). Show the list
-   with titles and let the user pick one.
-4. **Ask how they want it** (see [Choosing how to redeem](#choosing-how-to-redeem)):
-
-   > "Want me to redeem it automatically for you, or would you rather I just get you
-   > the code and you redeem it yourself in the app?"
-
-   Their answer (plus whether this host has a browser tool) selects the path:
-   - **Auto-redeem** → [Auto-redeem path](#auto-redeem-path)
-   - **Code handoff** → [Code-handoff path](#code-handoff-path)
+   with titles and let the user pick one. Each deal carries `redeem_modes` (which paths
+   it supports) and `stores` (where the voucher is redeemed) — read both.
+4. **Pick the path** (see [Choosing how to redeem](#choosing-how-to-redeem)). It's
+   bounded by the deal's `redeem_modes` AND whether this host has a browser tool:
+   - If the deal supports only `["code"]`, or this host has no browser tool → go
+     straight to **Code handoff**; don't offer auto-redeem.
+   - If the deal supports both `["auto","code"]` and a browser tool exists → ask:
+     > "Want me to redeem it automatically for you, or would you rather I just get you
+     > the code and you redeem it yourself?"
+   - **Auto-redeem** → [Auto-redeem path](#auto-redeem-path) · **Code handoff** →
+     [Code-handoff path](#code-handoff-path)
 
 Common errors (either path):
+- **409 mode_not_supported** → this deal doesn't support the path you tried (e.g. you
+  called `claim/start mode=auto` on a code-only deal). Switch to the path in
+  `supported_modes` from the response.
 - **409 already_claimed_today** → tell the user when the merchant clock rolls over
   (`claimed_date` + `merchant_tz` in the response). Don't retry.
 - **503 voucher_pool_empty** → no codes loaded right now. Tell the user honestly.
@@ -77,6 +82,10 @@ Two paths. The choice is the user's, but it's bounded by what the host can do.
 
 How to decide, in order:
 
+0. **Check the deal's `redeem_modes`.** If it's `["code"]` only, skip straight to the
+   code-handoff path — don't detect a browser or ask the question. (`claim/start` with
+   `mode:"auto"` on such a deal returns **409 `mode_not_supported`** anyway.) Only when
+   `redeem_modes` includes `"auto"` do steps 1–3 below apply.
 1. **Detect a browser-automation tool.** Check, in order:
    - `which playwright-cli camoufox-cli 2>/dev/null` returns a path
    - the host advertises an MCP browser tool (name matches `*browser*` / `*chrome*`)
@@ -84,9 +93,9 @@ How to decide, in order:
 2. **No browser tool** → only code handoff is possible. Tell the user plainly:
    "This environment can't drive a browser, so I'll verify your phone and hand you the
    code to redeem yourself — sound good?" Then take the code-handoff path.
-3. **Browser tool present** → ask the question in step 4 of the workflow and let the
-   user choose. Auto-redeem if they want hands-free; code handoff if they'd rather do
-   it themselves.
+3. **Browser tool present AND deal supports `auto`** → ask the question in step 4 of the
+   workflow and let the user choose. Auto-redeem if they want hands-free; code handoff
+   if they'd rather do it themselves.
 4. **Remember the choice for the session.** Don't re-ask on later deals in the same
    conversation. If the user later says "just give me the code" / "I'll do it myself",
    switch to code handoff.
@@ -128,8 +137,10 @@ is the gate.
 3. **Dispense with the binding** — retry `POST /api/v1/voucher/dispense` adding
    `phone` + `verification_token`. This binds the phone to the installation and returns
    the voucher.
-4. **Show the `voucher.code` and the `instructions` array verbatim.** The user pastes
-   the code into the merchant app themselves.
+4. **Show the `voucher.code`, the `instructions` array, and `stores` verbatim.** The
+   steps are merchant-specific — they may tell the user to enter the code in the app
+   (e.g. Cotti) or simply show it at the counter (e.g. TEAPULSE). Always include the
+   redemption store address(es); don't paraphrase.
 
 > The phone binding is set once (here, or — for the auto-redeem path — automatically on
 > the first successful merchant login). It identifies the installation; it is NOT
