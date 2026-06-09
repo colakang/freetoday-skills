@@ -29,11 +29,28 @@ so merchant flows can change without you re-installing anything.
 ## Install
 
 The skill is just a folder of Markdown. "Installing" means putting that folder where
-your agent looks for skills. The one-liner auto-detects the right place:
+your agent looks for skills.
+
+**Terminal agents** (Claude Code, Codex, Cursor, OpenClaw) — one-liner auto-detects
+the right place:
 
 ```bash
 curl -fsSL https://freetoday.ai/install.sh | sh
 ```
+
+**Claude Desktop / Claude.ai (no terminal)** — the GUI can't run `curl`, so install by
+uploading the packaged skill instead:
+
+1. Download the skill zip: **<https://freetoday.ai/freetoday.zip>**
+   (or grab it from [GitHub Releases](https://github.com/colakang/freetoday-skills/releases)).
+2. In Claude, open **Settings → Capabilities** and turn on **Code execution & file
+   creation** (skills require it).
+3. Go to **Settings → Customize → Skills**, click **➕ → Create skill → Upload a skill**,
+   and pick `freetoday.zip`. Claude reads `SKILL.md` and shows the name + description.
+4. Toggle it **on**. Trigger it in any chat with e.g. *"any free coffee near me?"*.
+
+> The zip's root is the `freetoday/` folder (with `SKILL.md` inside) — upload it as-is,
+> don't unzip it first.
 
 Or clone it yourself into the location your agent uses:
 
