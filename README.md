@@ -52,6 +52,11 @@ uploading the packaged skill instead:
 > The zip's root is the `freetoday/` folder (with `SKILL.md` inside) — upload it as-is,
 > don't unzip it first.
 
+> **First-run note:** the first time the skill calls `freetoday.ai` (to fetch deals or
+> grab a code), Claude Desktop's sandbox may ask you to approve outbound access to that
+> domain — just click **Allow**. It's a normal one-time prompt (enabled once Code
+> execution is on), not an install error.
+
 Or clone it yourself into the location your agent uses:
 
 ### Claude Code
