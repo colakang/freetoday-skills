@@ -1,0 +1,36 @@
+name: package-skill-zip
+# Build freetoday.zip (root folder = freetoday/, the shape Claude Desktop / claude.ai
+# expects) on every push to main, and publish it as the asset on the moving
+# `skill-latest` release. freetoday.ai/freetoday.zip 301-redirects to that asset, so the
+# hosted download always tracks the repo with zero EC2 maintenance.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build freetoday.zip
+        run: |
+          mkdir -p staging/freetoday
+          rsync -a \
+            --exclude='.git' --exclude='.github' \
+            --exclude='staging' --exclude='freetoday.zip' \
+            ./ staging/freetoday/
+          (cd staging && zip -rq ../freetoday.zip freetoday)
+          echo "=== contents ===" && unzip -l freetoday.zip
+      - name: Publish to moving 'skill-latest' release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view skill-latest >/dev/null 2>&1; then
+            gh release upload skill-latest freetoday.zip --clobber
+          else
+            gh release create skill-latest freetoday.zip \
+              --title "freetoday skill (latest build)" \
+              --notes "Auto-built on every push to main. **Claude Desktop / claude.ai:** download freetoday.zip → Settings → Customize → Skills → Create skill → Upload a skill. **Terminal agents:** \`curl -fsSL https://freetoday.ai/install.sh | sh\`"
+          fi
